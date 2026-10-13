@@ -4,4 +4,4 @@ __pycache__/
 .venv/
 outputs/
 .verification_*/
-dataset/
+.DS_Store
