@@ -25,6 +25,10 @@ class _Track:
     filter: KalmanFilter2D
     bbox: BBox
     area: float
+    required_hits: int
+    motion_anchor: tuple[float, float]
+    previous_observation: tuple[float, float]
+    has_moved: bool
     age: int = 1
     hits: int = 1
     missed: int = 0
@@ -49,6 +53,11 @@ class MultiObjectTracker:
         max_area_ratio: float = 4.0,
         appearance_weight: float = 0.50,
         appearance_momentum: float = 0.90,
+        mahalanobis_gate: float = 25.0,
+        mahalanobis_weight: float = 0.25,
+        adaptive_confirmation: bool = False,
+        min_motion_distance: float = 0.0,
+        adaptive_process_noise: bool = False,
     ) -> None:
         if association not in {"nearest", "hungarian"}:
             raise ValueError("association must be 'nearest' or 'hungarian'")
@@ -60,6 +69,9 @@ class MultiObjectTracker:
             or max_area_ratio < 1
             or appearance_weight < 0
             or not 0 <= appearance_momentum < 1
+            or mahalanobis_gate <= 0
+            or mahalanobis_weight < 0
+            or min_motion_distance < 0
         ):
             raise ValueError("invalid association weights")
         self.association = association
@@ -74,12 +86,21 @@ class MultiObjectTracker:
         self.max_area_ratio = float(max_area_ratio)
         self.appearance_weight = float(appearance_weight)
         self.appearance_momentum = float(appearance_momentum)
+        self.mahalanobis_gate = float(mahalanobis_gate)
+        self.mahalanobis_weight = float(mahalanobis_weight)
+        self.adaptive_confirmation = adaptive_confirmation
+        self.min_motion_distance = float(min_motion_distance)
+        self.adaptive_process_noise = adaptive_process_noise
         self._active: list[_Track] = []
         self._finished: list[_Track] = []
         self._next_id = 1
 
     def _new_track(
-        self, detection: Detection, frame_index: int, time_seconds: float
+        self,
+        detection: Detection,
+        frame_index: int,
+        time_seconds: float,
+        required_hits: int,
     ) -> _Track:
         track = _Track(
             track_id=self._next_id,
@@ -91,6 +112,10 @@ class MultiObjectTracker:
             ),
             bbox=detection.bbox,
             area=detection.area,
+            required_hits=required_hits,
+            motion_anchor=detection.centroid,
+            previous_observation=detection.centroid,
+            has_moved=self.min_motion_distance == 0.0,
             appearance=(
                 np.asarray(detection.appearance, dtype=float).copy()
                 if detection.appearance is not None
@@ -117,6 +142,12 @@ class MultiObjectTracker:
         time_seconds: float = 0.0,
         dt: float = 1.0,
     ) -> list[TrackSnapshot]:
+        if self.adaptive_process_noise:
+            for track in self._active:
+                vx, vy = track.filter.velocity
+                track.filter.process_variance = self.process_variance + min(
+                    100_000.0, 0.5 * (vx * vx + vy * vy)
+                )
         predictions = np.asarray(
             [track.filter.predict(dt) for track in self._active], dtype=float
         ).reshape((-1, 2))
@@ -131,10 +162,11 @@ class MultiObjectTracker:
             if self.association == "nearest"
             else hungarian_assignment
         )
+        association_gate = self.max_distance * min(np.sqrt(self.max_missed + 1.0), 1.5)
         matches, unmatched_tracks, unmatched_detections = assign(
             predictions,
             measurements,
-            self.max_distance,
+            association_gate,
             pair_costs=pair_costs,
             valid_mask=valid_mask,
         )
@@ -149,6 +181,7 @@ class MultiObjectTracker:
             track.hits += 1
             track.missed = 0
             self._update_appearance(track, detection)
+            self._update_motion(track, position)
             track.history.append(
                 TrajectoryPoint(
                     frame_index,
@@ -184,14 +217,24 @@ class MultiObjectTracker:
                 )
             )
 
+        small_detection_limit = 0.0
+        if self.adaptive_confirmation and len(detections) >= 10:
+            areas = np.asarray([detection.area for detection in detections], dtype=float)
+            large_scale = float(np.percentile(areas, 90))
+            if large_scale >= 100.0 and float(np.median(areas)) >= 8.0:
+                small_detection_limit = max(64.0, large_scale * 0.25)
         for detection_index in unmatched_detections:
+            detection = detections[detection_index]
+            required_hits = self.min_hits + (
+                2 if detection.area < small_detection_limit else 0
+            )
             self._active.append(
-                self._new_track(detections[detection_index], frame_index, time_seconds)
+                self._new_track(detection, frame_index, time_seconds, required_hits)
             )
 
         survivors: list[_Track] = []
         for track in self._active:
-            confirmed = track.hits >= self.min_hits
+            confirmed = track.hits >= track.required_hits
             # A tentative track that immediately disappears is usually a
             # foreground-segmentation artifact, so do not retain it.
             should_delete = (
@@ -208,7 +251,7 @@ class MultiObjectTracker:
         self._active = survivors
         return self.snapshots()
 
-    def snapshots(self, trail_length: int = 30) -> list[TrackSnapshot]:
+    def snapshots(self, trail_length: int = 15) -> list[TrackSnapshot]:
         return [
             TrackSnapshot(
                 track_id=track.track_id,
@@ -217,8 +260,8 @@ class MultiObjectTracker:
                 age=track.age,
                 hits=track.hits,
                 missed=track.missed,
-                confirmed=track.hits >= self.min_hits,
-                trail=tuple(point.centroid for point in track.history[-trail_length:]),
+                confirmed=track.hits >= track.required_hits and track.has_moved,
+                trail=_observed_trail(track.history, trail_length),
                 velocity=track.filter.velocity,
             )
             for track in self._active
@@ -231,8 +274,25 @@ class MultiObjectTracker:
         return {
             track.track_id: list(track.history)
             for track in tracks
-            if track.hits >= self.min_hits
+            if track.hits >= track.required_hits and track.has_moved
         }
+
+    def _update_motion(self, track: _Track, position: tuple[float, float]) -> None:
+        """Confirm displacement using averaged observations, then retain it."""
+        previous = track.previous_observation
+        if track.hits == 2:
+            track.motion_anchor = (
+                (track.motion_anchor[0] + position[0]) / 2.0,
+                (track.motion_anchor[1] + position[1]) / 2.0,
+            )
+        elif track.hits >= 4 and not track.has_moved:
+            current = ((previous[0] + position[0]) / 2.0, (previous[1] + position[1]) / 2.0)
+            displacement = np.hypot(
+                current[0] - track.motion_anchor[0], current[1] - track.motion_anchor[1]
+            )
+            if displacement >= self.min_motion_distance:
+                track.has_moved = True
+        track.previous_observation = position
 
     def _association_costs(
         self, predictions: np.ndarray, detections: list[Detection]
@@ -245,34 +305,84 @@ class MultiObjectTracker:
         if not self._active or not detections:
             return distances, np.ones(distances.shape, dtype=bool)
 
-        iou_cost = np.empty_like(distances)
-        area_cost = np.empty_like(distances)
-        appearance_cost = np.zeros_like(distances)
-        valid_area = np.empty(distances.shape, dtype=bool)
-        for track_index, track in enumerate(self._active):
-            predicted_bbox = _bbox_at_centroid(track.bbox, predictions[track_index])
-            for detection_index, detection in enumerate(detections):
-                iou_cost[track_index, detection_index] = 1.0 - _bbox_iou(
-                    predicted_bbox, detection.bbox
-                )
-                small_area = max(min(track.area, detection.area), 1e-9)
-                large_area = max(track.area, detection.area)
-                area_ratio = large_area / small_area
-                valid_area[track_index, detection_index] = (
-                    area_ratio <= self.max_area_ratio
-                )
-                area_cost[track_index, detection_index] = np.log(area_ratio)
-                appearance_cost[track_index, detection_index] = _appearance_distance(
-                    track.appearance, detection.appearance
-                )
+        track_boxes = np.asarray(
+            [
+                _bbox_at_centroid(track.bbox, predictions[index])
+                for index, track in enumerate(self._active)
+            ],
+            dtype=float,
+        )
+        detection_boxes = np.asarray(
+            [detection.bbox for detection in detections], dtype=float
+        )
+        intersection_x1 = np.maximum(
+            track_boxes[:, None, 0], detection_boxes[None, :, 0]
+        )
+        intersection_y1 = np.maximum(
+            track_boxes[:, None, 1], detection_boxes[None, :, 1]
+        )
+        intersection_x2 = np.minimum(
+            track_boxes[:, None, 0] + track_boxes[:, None, 2],
+            detection_boxes[None, :, 0] + detection_boxes[None, :, 2],
+        )
+        intersection_y2 = np.minimum(
+            track_boxes[:, None, 1] + track_boxes[:, None, 3],
+            detection_boxes[None, :, 1] + detection_boxes[None, :, 3],
+        )
+        intersection = np.maximum(0.0, intersection_x2 - intersection_x1) * np.maximum(
+            0.0, intersection_y2 - intersection_y1
+        )
+        track_box_areas = track_boxes[:, 2] * track_boxes[:, 3]
+        detection_box_areas = detection_boxes[:, 2] * detection_boxes[:, 3]
+        union = track_box_areas[:, None] + detection_box_areas[None, :] - intersection
+        iou = np.divide(
+            intersection,
+            union,
+            out=np.zeros_like(intersection),
+            where=union > 0,
+        )
+        iou_cost = 1.0 - iou
+
+        track_areas = np.asarray([track.area for track in self._active])
+        detection_areas = np.asarray([detection.area for detection in detections])
+        small_areas = np.maximum(
+            np.minimum(track_areas[:, None], detection_areas[None, :]), 1e-9
+        )
+        area_ratio = np.maximum(
+            track_areas[:, None], detection_areas[None, :]
+        ) / small_areas
+        area_cost = np.log(area_ratio)
+        valid_area = area_ratio <= self.max_area_ratio
+
+        mahalanobis_squared = np.vstack(
+            [track.filter.mahalanobis_squared_many(measurements) for track in self._active]
+        )
+        valid_motion = mahalanobis_squared <= self.mahalanobis_gate
+        motion_cost = np.minimum(
+            np.sqrt(mahalanobis_squared / self.mahalanobis_gate), 1.0
+        )
+        appearance_cost = (
+            _appearance_cost_matrix(self._active, detections)
+            if self.appearance_weight
+            else np.zeros_like(distances)
+        )
+
+        # A limited expansion helps reacquire missed detections without letting
+        # long gaps connect tracks to distant objects in crowded scenes.
+        missed_counts = np.asarray([track.missed for track in self._active])
+        distance_gates = self.max_distance * np.minimum(
+            np.sqrt(missed_counts[:, None] + 1.0), 1.5
+        )
+        valid_distance = distances <= distance_gates
 
         costs = (
             distances
             + self.iou_weight * self.max_distance * iou_cost
             + self.area_weight * self.max_distance * area_cost
             + self.appearance_weight * self.max_distance * appearance_cost
+            + self.mahalanobis_weight * self.max_distance * motion_cost
         )
-        return costs, valid_area
+        return costs, valid_area & valid_motion & valid_distance
 
     def _update_appearance(self, track: _Track, detection: Detection) -> None:
         if detection.appearance is None:
@@ -288,6 +398,18 @@ class MultiObjectTracker:
         total = float(track.appearance.sum())
         if total > 0:
             track.appearance /= total
+
+
+def _observed_trail(history: list[TrajectoryPoint], limit: int) -> tuple[tuple[float, float], ...]:
+    """Draw only the latest uninterrupted sequence of observed positions."""
+    if limit <= 0:
+        return ()
+    points = []
+    for point in reversed(history[-limit:]):
+        if not point.matched:
+            break
+        points.append(point.centroid)
+    return tuple(reversed(points))
 
 
 def _bbox_at_centroid(bbox: BBox, centroid: np.ndarray) -> BBox:
@@ -310,20 +432,43 @@ def _bbox_iou(first: BBox, second: BBox) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-def _appearance_distance(first: object | None, second: object | None) -> float:
-    """Hellinger distance between normalized histograms, in [0, 1]."""
-    if first is None or second is None:
-        return 0.0
-    first_array = np.asarray(first, dtype=float)
-    second_array = np.asarray(second, dtype=float)
-    if first_array.shape != second_array.shape:
-        return 0.0
-    first_sum = float(first_array.sum())
-    second_sum = float(second_array.sum())
-    if first_sum <= 0 or second_sum <= 0:
-        return 0.0
-    coefficient = np.sqrt(
-        (first_array / first_sum) * (second_array / second_sum)
-    ).sum()
-    return float(np.sqrt(max(0.0, 1.0 - min(float(coefficient), 1.0))))
+def _appearance_cost_matrix(
+    tracks: list[_Track], detections: list[Detection]
+) -> np.ndarray:
+    """Compute Hellinger histogram costs in batches for matching shapes."""
+    costs = np.zeros((len(tracks), len(detections)), dtype=float)
+    track_groups: dict[tuple[int, ...], list[tuple[int, np.ndarray]]] = {}
+    detection_groups: dict[tuple[int, ...], list[tuple[int, np.ndarray]]] = {}
+
+    for index, track in enumerate(tracks):
+        if track.appearance is None:
+            continue
+        histogram = np.asarray(track.appearance, dtype=float)
+        total = float(histogram.sum())
+        if total > 0:
+            track_groups.setdefault(histogram.shape, []).append(
+                (index, np.sqrt(np.maximum(histogram, 0.0) / total).reshape(-1))
+            )
+    for index, detection in enumerate(detections):
+        if detection.appearance is None:
+            continue
+        histogram = np.asarray(detection.appearance, dtype=float)
+        total = float(histogram.sum())
+        if total > 0:
+            detection_groups.setdefault(histogram.shape, []).append(
+                (index, np.sqrt(np.maximum(histogram, 0.0) / total).reshape(-1))
+            )
+
+    for shape in track_groups.keys() & detection_groups.keys():
+        track_entries = track_groups[shape]
+        detection_entries = detection_groups[shape]
+        track_indices = [index for index, _ in track_entries]
+        detection_indices = [index for index, _ in detection_entries]
+        track_roots = np.stack([histogram for _, histogram in track_entries])
+        detection_roots = np.stack([histogram for _, histogram in detection_entries])
+        coefficients = np.clip(track_roots @ detection_roots.T, 0.0, 1.0)
+        costs[np.ix_(track_indices, detection_indices)] = np.sqrt(
+            np.maximum(0.0, 1.0 - coefficients)
+        )
+    return costs
 

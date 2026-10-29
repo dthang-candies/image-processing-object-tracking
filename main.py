@@ -1,7 +1,7 @@
 """Workspace-root launcher for the object-tracking application.
 
-This keeps the implementation inside ``python/`` while allowing commands such
-as ``python main.py dataset/video.mp4`` to run from the repository root.
+The implementation lives inside ``python/``; run ``python main.py`` here to
+process the media in ``dataset/``.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Command-line entry point for processing one video or a video directory."""
+"""Run the tracking demo on every supported file in the dataset directory."""
 
 from __future__ import annotations
 
@@ -8,124 +8,99 @@ import sys
 from pathlib import Path
 
 from object_tracking.detection import DetectorConfig
+from object_tracking.frame_source import TIFF_EXTENSIONS
 from object_tracking.pipeline import PipelineConfig, TrackerConfig, process_video
 
 
-VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
+VIDEO_EXTENSIONS = {
+    ".3gp",
+    ".avi",
+    ".flv",
+    ".m2ts",
+    ".m4v",
+    ".mjpeg",
+    ".mjpg",
+    ".mkv",
+    ".mov",
+    ".mp4",
+    ".mpeg",
+    ".mpg",
+    ".mts",
+    ".ts",
+    ".vob",
+    ".webm",
+    ".wmv",
+}
+INPUT_EXTENSIONS = VIDEO_EXTENSIONS | TIFF_EXTENSIONS
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DATASET = PROJECT_ROOT / "dataset"
+DEFAULT_OUTPUT = PROJECT_ROOT / "python" / "outputs"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Detect, segment, and track moving objects in video."
+    return argparse.ArgumentParser(
+        description="Process every supported file in dataset with both tracking algorithms."
     )
-    parser.add_argument("input", type=Path, help="Input video or directory of videos")
-    parser.add_argument("--output", type=Path, default=Path("outputs"))
-    parser.add_argument(
-        "--algorithm",
-        choices=("nearest", "hungarian", "both"),
-        default="both",
-        help="Data association method (default: both, for comparison)",
-    )
-    parser.add_argument("--min-area", type=float, default=400.0)
-    parser.add_argument("--max-area", type=float, default=None)
-    parser.add_argument("--max-distance", type=float, default=60.0)
-    parser.add_argument("--max-missed", type=int, default=15)
-    parser.add_argument("--min-hits", type=int, default=2)
-    parser.add_argument("--iou-weight", type=float, default=0.25)
-    parser.add_argument("--area-weight", type=float, default=0.10)
-    parser.add_argument("--max-area-ratio", type=float, default=4.0)
-    parser.add_argument("--appearance-weight", type=float, default=0.50)
-    parser.add_argument("--appearance-momentum", type=float, default=0.90)
-    parser.add_argument("--initial-velocity-variance", type=float, default=10_000.0)
-    parser.add_argument("--warmup-frames", type=int, default=10)
-    parser.add_argument("--history", type=int, default=300)
-    parser.add_argument("--variance-threshold", type=float, default=24.0)
-    parser.add_argument("--learning-rate", type=float, default=-1.0)
-    parser.add_argument("--max-foreground-ratio", type=float, default=0.65)
-    parser.add_argument("--no-mask", action="store_true")
-    parser.add_argument("--display", action="store_true")
-    parser.add_argument(
-        "--device",
-        choices=("auto", "cpu", "gpu"),
-        default="auto",
-        help="Segmentation device: auto, CPU, or OpenCL GPU (default: auto)",
-    )
-    parser.add_argument(
-        "--max-frames",
-        type=int,
-        default=None,
-        help="Process only the first N frames (useful for a quick test)",
-    )
-    parser.add_argument(
-        "--progress-every",
-        type=int,
-        default=100,
-        help="Print progress every N frames; use 0 to disable",
-    )
-    return parser
 
 
 def discover_videos(path: Path) -> list[Path]:
+    """Return supported media files directly inside a file or directory."""
     if path.is_file():
-        return [path]
+        if path.suffix.lower() in INPUT_EXTENSIONS:
+            return [path]
+        return []
     if path.is_dir():
         return sorted(
-            item for item in path.iterdir() if item.suffix.lower() in VIDEO_EXTENSIONS
+            item
+            for item in path.iterdir()
+            if item.is_file() and item.suffix.lower() in INPUT_EXTENSIONS
         )
     return []
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    videos = discover_videos(args.input)
+    build_parser().parse_args(argv)
+    videos = discover_videos(DEFAULT_DATASET)
     if not videos:
-        print(f"No supported videos found at: {args.input}", file=sys.stderr)
+        print(
+            f"No supported media found at: {DEFAULT_DATASET}. "
+            f"Supported video extensions: {', '.join(sorted(VIDEO_EXTENSIONS))}; "
+            "also supports .tif and .tiff stacks.",
+            file=sys.stderr,
+        )
         return 2
-    algorithms = (
-        ("nearest", "hungarian")
-        if args.algorithm == "both"
-        else (args.algorithm,)
-    )
-    config = PipelineConfig(
-        detector=DetectorConfig(
-            history=args.history,
-            variance_threshold=args.variance_threshold,
-            min_area=args.min_area,
-            max_area=args.max_area,
-            learning_rate=args.learning_rate,
-            max_foreground_ratio=args.max_foreground_ratio,
-            device=args.device,
-        ),
-        tracker=TrackerConfig(
-            max_distance=args.max_distance,
-            max_missed=args.max_missed,
-            min_hits=args.min_hits,
-            iou_weight=args.iou_weight,
-            area_weight=args.area_weight,
-            max_area_ratio=args.max_area_ratio,
-            appearance_weight=args.appearance_weight,
-            appearance_momentum=args.appearance_momentum,
-            initial_velocity_variance=args.initial_velocity_variance,
-        ),
-        warmup_frames=args.warmup_frames,
-        save_mask=not args.no_mask,
-        display=args.display,
-        max_frames=args.max_frames,
-    )
-
+    algorithms = ("nearest", "hungarian")
     all_results = []
     failed = False
+    stem_counts: dict[str, int] = {}
     for video in videos:
-        destination = args.output / video.stem
-        print(f"Processing {video} -> {destination}")
+        normalized_stem = video.stem.casefold()
+        stem_counts[normalized_stem] = stem_counts.get(normalized_stem, 0) + 1
+
+    used_destinations: set[str] = set()
+    print(f"Processing all {len(videos)} supported media file(s).")
+    for video in videos:
+        config = build_config(video)
+        destination_name = video.stem
+        if stem_counts[video.stem.casefold()] > 1:
+            destination_name = f"{video.stem}_{video.suffix[1:].lower()}"
+        base_name = destination_name
+        suffix = 2
+        while destination_name.casefold() in used_destinations:
+            destination_name = f"{base_name}_{suffix}"
+            suffix += 1
+        used_destinations.add(destination_name.casefold())
+        destination = DEFAULT_OUTPUT / destination_name
+        print(
+            f"Processing {video} -> {destination} "
+            f"[algorithms={', '.join(algorithms)}]"
+        )
         try:
             last_reported = 0
 
             def report_progress(frame: int, total: int, elapsed: float) -> None:
                 nonlocal last_reported
-                if args.progress_every <= 0:
-                    return
-                if frame - last_reported < args.progress_every and frame != total:
+                if frame - last_reported < 100 and frame != total:
                     return
                 last_reported = frame
                 speed = frame / elapsed if elapsed > 0 else 0.0
@@ -148,13 +123,46 @@ def main(argv: list[str] | None = None) -> int:
             failed = True
             print(f"Failed: {video}: {error}", file=sys.stderr)
             all_results.append({"input": str(video), "error": str(error)})
-    args.output.mkdir(parents=True, exist_ok=True)
-    summary_path = args.output / "summary.json"
+    DEFAULT_OUTPUT.mkdir(parents=True, exist_ok=True)
+    summary_path = DEFAULT_OUTPUT / "summary.json"
     summary_path.write_text(
         json.dumps(all_results, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(f"Done. Summary: {summary_path}")
     return 1 if failed else 0
+
+
+def build_config(input_path: Path) -> PipelineConfig:
+    microscopy = input_path.suffix.lower() in TIFF_EXTENSIONS
+    return PipelineConfig(
+        detector=DetectorConfig(
+            segmentation_mode="bright_spots" if microscopy else "mog2",
+            detect_shadows=not microscopy,
+            min_area=4.0,
+            min_width=2,
+            min_height=2,
+            kernel_size=3,
+            open_iterations=0,
+            close_iterations=1,
+            max_foreground_ratio=0.90 if microscopy else 0.65,
+            adaptive_min_area=True,
+            adaptive_spot_threshold=True,
+        ),
+        tracker=TrackerConfig(
+            max_distance=15.0 if microscopy else 60.0,
+            max_missed=10 if microscopy else 15,
+            min_hits=3,
+            adaptive_confirmation=True,
+            min_motion_distance=0.0 if microscopy else 2.0,
+            adaptive_process_noise=True,
+            iou_weight=0.05 if microscopy else 0.25,
+            area_weight=0.05 if microscopy else 0.10,
+            max_area_ratio=6.0 if microscopy else 4.0,
+            appearance_weight=0.0 if microscopy else 0.50,
+            mahalanobis_weight=0.75 if microscopy else 0.25,
+        ),
+        save_mask=False,
+    )
 
 
 if __name__ == "__main__":
