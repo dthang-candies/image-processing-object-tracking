@@ -1,3 +1,5 @@
+from itertools import permutations
+
 import numpy as np
 
 from object_tracking.assignment import (
@@ -76,3 +78,19 @@ def test_rectangular_hungarian_assigns_each_row_once():
     )
 
     assert assignment == [1, 0]
+
+
+def test_vectorized_hungarian_matches_brute_force_with_ties():
+    rng = np.random.default_rng(7)
+    for _ in range(10):
+        cost = np.full((4, 32), 100.0)
+        cost[:, :6] = rng.integers(0, 10, size=(4, 6))
+        assignment = _hungarian_rows(cost)
+        actual = sum(cost[row, column] for row, column in enumerate(assignment))
+        expected = min(
+            sum(cost[row, column] for row, column in enumerate(columns))
+            for columns in permutations(range(6), 4)
+        )
+
+        assert len(set(assignment)) == 4
+        assert actual == expected

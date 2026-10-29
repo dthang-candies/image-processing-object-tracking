@@ -11,6 +11,7 @@ import cv2
 
 from .detection import DetectorConfig, ForegroundDetector
 from .export import save_trajectories
+from .frame_source import open_frame_source
 from .tracker import MultiObjectTracker
 from .visualization import annotate_frame
 
@@ -28,27 +29,31 @@ class TrackerConfig:
     max_area_ratio: float = 4.0
     appearance_weight: float = 0.50
     appearance_momentum: float = 0.90
+    mahalanobis_gate: float = 25.0
+    mahalanobis_weight: float = 0.25
+    adaptive_confirmation: bool = False
+    min_motion_distance: float = 0.0
+    adaptive_process_noise: bool = False
 
 
 @dataclass(slots=True)
 class PipelineConfig:
     detector: DetectorConfig = field(default_factory=DetectorConfig)
     tracker: TrackerConfig = field(default_factory=TrackerConfig)
-    warmup_frames: int = 10
     save_mask: bool = True
     display: bool = False
     codec: str = "mp4v"
-    max_frames: int | None = None
+    tiff_fps: float | None = None
 
 
 def process_video(
     input_path: Path,
     output_dir: Path,
-    algorithms: tuple[str, ...] = ("hungarian",),
+    algorithms: tuple[str, ...] = ("nearest", "hungarian"),
     config: PipelineConfig | None = None,
     progress_callback: Callable[[int, int, float], None] | None = None,
 ) -> dict:
-    """Process one video once and run one or both association methods."""
+    """Process one video once and run both association methods by default."""
     config = config or PipelineConfig()
     input_path = Path(input_path)
     output_dir = Path(output_dir)
@@ -61,28 +66,18 @@ def process_video(
         raise ValueError("At least one association algorithm is required")
     if len(config.codec) != 4:
         raise ValueError("codec must contain exactly four characters")
-    if config.warmup_frames < 0:
-        raise ValueError("warmup_frames cannot be negative")
-    if config.max_frames is not None and config.max_frames <= 0:
-        raise ValueError("max_frames must be positive when provided")
+    if config.tiff_fps is not None and config.tiff_fps <= 0:
+        raise ValueError("tiff_fps must be positive when provided")
 
-    capture = cv2.VideoCapture(str(input_path))
-    if not capture.isOpened():
-        raise RuntimeError(f"OpenCV cannot open video: {input_path}")
-    fps = float(capture.get(cv2.CAP_PROP_FPS))
-    if fps <= 0 or fps != fps:
-        fps = 30.0
-    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    source_frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    target_frame_count = (
-        min(source_frame_count, config.max_frames)
-        if source_frame_count > 0 and config.max_frames is not None
-        else config.max_frames or source_frame_count
-    )
+    source = open_frame_source(input_path, tiff_fps=config.tiff_fps)
+    fps = source.fps
+    width = source.width
+    height = source.height
+    source_frame_count = source.frame_count
+    target_frame_count = source_frame_count
     if width <= 0 or height <= 0:
-        capture.release()
-        raise RuntimeError(f"Video has invalid dimensions: {input_path}")
+        source.release()
+        raise RuntimeError(f"Input has invalid dimensions: {input_path}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     detector = ForegroundDetector(config.detector)
@@ -111,7 +106,7 @@ def process_video(
     video_outputs_ready = all(writer.isOpened() for writer in writers.values())
     mask_output_ready = mask_writer is None or mask_writer.isOpened()
     if not video_outputs_ready or not mask_output_ready:
-        capture.release()
+        source.release()
         for writer in writers.values():
             writer.release()
         if mask_writer is not None:
@@ -123,25 +118,22 @@ def process_video(
     started = time.perf_counter()
     try:
         while True:
-            if config.max_frames is not None and frame_index >= config.max_frames:
-                break
-            ok, frame = capture.read()
+            ok, frame = source.read()
             if not ok:
                 break
             mask, detections = detector.apply(frame)
-            effective_detections = detections if frame_index >= config.warmup_frames else []
             current_time = frame_index / fps
             for algorithm, tracker in trackers.items():
                 association_started = time.perf_counter()
                 snapshots = tracker.update(
-                    effective_detections,
+                    detections,
                     frame_index=frame_index,
                     time_seconds=current_time,
                     dt=1.0 / fps,
                 )
                 association_seconds[algorithm] += time.perf_counter() - association_started
                 writers[algorithm].write(
-                    annotate_frame(frame, effective_detections, snapshots, algorithm)
+                    annotate_frame(frame, detections, snapshots, algorithm)
                 )
             if mask_writer is not None:
                 mask_writer.write(cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR))
@@ -149,7 +141,7 @@ def process_video(
                 preview_algorithm = algorithms[0]
                 preview = annotate_frame(
                     frame,
-                    effective_detections,
+                    detections,
                     trackers[preview_algorithm].snapshots(),
                     preview_algorithm,
                 )
@@ -164,7 +156,7 @@ def process_video(
                     time.perf_counter() - started,
                 )
     finally:
-        capture.release()
+        source.release()
         for writer in writers.values():
             writer.release()
         if mask_writer is not None:
@@ -175,6 +167,7 @@ def process_video(
     elapsed = time.perf_counter() - started
     results: dict = {
         "input": str(input_path),
+        "source_type": source.source_type,
         "processing_device": detector.device,
         "processing_device_name": detector.device_name,
         "frames": frame_index,

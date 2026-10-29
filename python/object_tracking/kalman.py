@@ -36,6 +36,21 @@ class KalmanFilter2D:
         """Estimated velocity in coordinate units per ``dt`` time unit."""
         return float(self.state[2]), float(self.state[3])
 
+    def mahalanobis_squared(self, measurement: tuple[float, float]) -> float:
+        """Squared innovation distance using the predicted measurement covariance."""
+        return float(self.mahalanobis_squared_many([measurement])[0])
+
+    def mahalanobis_squared_many(self, measurements: np.ndarray) -> np.ndarray:
+        """Compute innovation distances for many detections with one matrix solve."""
+        measured = np.asarray(measurements, dtype=float).reshape((-1, 2))
+        if measured.size == 0:
+            return np.empty(0, dtype=float)
+        residuals = measured - self.state[:2]
+        innovation_covariance = self.covariance[:2, :2] + self.measurement_noise
+        whitened = np.linalg.solve(innovation_covariance, residuals.T).T
+        distances = np.einsum("ij,ij->i", residuals, whitened)
+        return np.maximum(distances, 0.0)
+
     def predict(self, dt: float = 1.0) -> tuple[float, float]:
         if dt <= 0:
             raise ValueError("dt must be positive")
