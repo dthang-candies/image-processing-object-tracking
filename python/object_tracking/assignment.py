@@ -107,29 +107,45 @@ def _hungarian_rows(cost: np.ndarray) -> list[int]:
         while True:
             used[column] = True
             current_row = column_row[column]
-            delta = np.inf
-            next_column = 0
-            for candidate_column in range(1, column_count + 1):
-                if used[candidate_column]:
-                    continue
-                reduced = (
-                    cost[current_row - 1, candidate_column - 1]
-                    - row_potential[current_row]
-                    - col_potential[candidate_column]
-                )
-                if reduced < min_values[candidate_column]:
-                    min_values[candidate_column] = reduced
-                    predecessor[candidate_column] = column
-                if min_values[candidate_column] < delta:
-                    delta = min_values[candidate_column]
-                    next_column = candidate_column
+            if column_count >= 32:
+                # Vectorize the same Hungarian potential updates for crowded
+                # components while keeping the compact scalar path for small ones.
+                free = ~used[1:]
+                reduced = cost[current_row - 1] - row_potential[current_row] - col_potential[1:]
+                improved = free & (reduced < min_values[1:])
+                min_values[1:][improved] = reduced[improved]
+                predecessor[1:][improved] = column
+                available = np.where(free, min_values[1:], np.inf)
+                next_column = int(np.argmin(available)) + 1
+                delta = float(available[next_column - 1])
+                used_columns = np.flatnonzero(used)
+                row_potential[column_row[used_columns]] += delta
+                col_potential[used_columns] -= delta
+                min_values[~used] -= delta
+            else:
+                delta = np.inf
+                next_column = 0
+                for candidate_column in range(1, column_count + 1):
+                    if used[candidate_column]:
+                        continue
+                    reduced = (
+                        cost[current_row - 1, candidate_column - 1]
+                        - row_potential[current_row]
+                        - col_potential[candidate_column]
+                    )
+                    if reduced < min_values[candidate_column]:
+                        min_values[candidate_column] = reduced
+                        predecessor[candidate_column] = column
+                    if min_values[candidate_column] < delta:
+                        delta = min_values[candidate_column]
+                        next_column = candidate_column
 
-            for candidate_column in range(column_count + 1):
-                if used[candidate_column]:
-                    row_potential[column_row[candidate_column]] += delta
-                    col_potential[candidate_column] -= delta
-                else:
-                    min_values[candidate_column] -= delta
+                for candidate_column in range(column_count + 1):
+                    if used[candidate_column]:
+                        row_potential[column_row[candidate_column]] += delta
+                        col_potential[candidate_column] -= delta
+                    else:
+                        min_values[candidate_column] -= delta
             column = next_column
             if column_row[column] == 0:
                 break
@@ -180,22 +196,31 @@ def hungarian_assignment(
         1e9,
         unmatched_cost * (track_count + detection_count + 1) * 1000.0,
     )
-    # A track chooses a real detection or one of ``track_count`` dummy
-    # columns. Real detections that no row selects are naturally unmatched,
-    # so dummy rows are unnecessary.
-    augmented = np.full(
-        (track_count, detection_count + track_count),
-        unmatched_cost,
-        dtype=float,
-    )
-    augmented[:, :detection_count] = np.where(valid, costs, forbidden)
+    # Gating usually leaves a sparse bipartite graph: a track can only match
+    # detections near its prediction. Solve each disconnected neighborhood
+    # independently instead of sending one large mostly-forbidden matrix to
+    # the cubic Hungarian solver.
+    matches: list[Match] = []
+    for component_tracks, component_detections in _valid_components(valid):
+        component_valid = valid[np.ix_(component_tracks, component_detections)]
+        component_costs = costs[np.ix_(component_tracks, component_detections)]
+        row_count = len(component_tracks)
+        augmented = np.full(
+            (row_count, len(component_detections) + row_count),
+            unmatched_cost,
+            dtype=float,
+        )
+        augmented[:, : len(component_detections)] = np.where(
+            component_valid, component_costs, forbidden
+        )
 
-    assignment = _hungarian_rows(augmented)
-    matches = [
-        (track_index, column)
-        for track_index, column in enumerate(assignment[:track_count])
-        if column < detection_count and valid[track_index, column]
-    ]
+        assignment = _hungarian_rows(augmented)
+        matches.extend(
+            (int(component_tracks[row]), int(component_detections[column]))
+            for row, column in enumerate(assignment)
+            if column < len(component_detections) and component_valid[row, column]
+        )
+    matches.sort()
     matched_tracks = {track for track, _ in matches}
     matched_detections = {detection for _, detection in matches}
     return (
@@ -203,6 +228,48 @@ def hungarian_assignment(
         [i for i in range(track_count) if i not in matched_tracks],
         [j for j in range(detection_count) if j not in matched_detections],
     )
+
+
+def _valid_components(valid: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Return connected track/detection neighborhoods in a valid-pair mask."""
+    track_count, detection_count = valid.shape
+    if valid.all():
+        return [(np.arange(track_count), np.arange(detection_count))]
+
+    seen_tracks = np.zeros(track_count, dtype=bool)
+    seen_detections = np.zeros(detection_count, dtype=bool)
+    components: list[tuple[np.ndarray, np.ndarray]] = []
+
+    for first_track in range(track_count):
+        if seen_tracks[first_track] or not valid[first_track].any():
+            continue
+        component_tracks: list[int] = []
+        component_detections: list[int] = []
+        pending: list[tuple[bool, int]] = [(True, first_track)]
+        seen_tracks[first_track] = True
+
+        while pending:
+            is_track, index = pending.pop()
+            if is_track:
+                component_tracks.append(index)
+                for detection_index in np.flatnonzero(valid[index]):
+                    if not seen_detections[detection_index]:
+                        seen_detections[detection_index] = True
+                        pending.append((False, detection_index))
+            else:
+                component_detections.append(index)
+                for track_index in np.flatnonzero(valid[:, index]):
+                    if not seen_tracks[track_index]:
+                        seen_tracks[track_index] = True
+                        pending.append((True, track_index))
+
+        components.append(
+            (
+                np.asarray(sorted(component_tracks), dtype=int),
+                np.asarray(sorted(component_detections), dtype=int),
+            )
+        )
+    return components
 
 
 def _prepare_pair_costs(

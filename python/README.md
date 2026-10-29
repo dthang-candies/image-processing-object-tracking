@@ -1,143 +1,49 @@
 # Xử lý video và theo dõi đa đối tượng
 
-Module này thực hiện đầy đủ pipeline cổ điển (không cần mô hình học sâu):
-
-1. Phân đoạn foreground bằng MOG2 và morphology.
-2. Phát hiện contour, bounding box và centroid.
-3. Dự đoán trạng thái `[x, y, vx, vy]` bằng Kalman Filter.
-4. Ghép detection giữa các frame bằng Nearest-Neighbor hoặc Hungarian.
-5. Vẽ ID/quỹ đạo và lưu kết quả CSV, JSON, video chú thích, video mask.
-
-Cost ghép cặp kết hợp khoảng cách centroid, IoU của bounding box, tỉ lệ diện
-tích và histogram màu HSV. Histogram được cập nhật dần theo track để giảm đổi
-ID khi hai vật thể giao nhau.
-Track mới ở trạng thái tạm thời, chỉ được xác nhận sau `min_hits` lần phát hiện;
-nhiễu xuất hiện một frame sẽ không bị lưu thành quỹ đạo thật.
-
-## Chạy từ thư mục gốc repository
-
-Các lệnh khuyến nghị dưới đây chạy tại
-`D:\image-processing-object-tracking`:
+Đặt các file video hoặc TIFF trực tiếp vào thư mục `dataset`. Từ thư mục gốc,
+chạy:
 
 ```powershell
-python -m pip install -r requirements.txt
-python main.py dataset\video.mp4 --output python\outputs --algorithm both --device auto
+python main.py
 ```
 
-Ép dùng GPU OpenCL:
+Trong lần thiết lập đầu tiên, cài thư viện bằng
+`python -m pip install -r requirements.txt`.
 
-```powershell
-python main.py dataset\video.mp4 --output python\outputs --algorithm both --device gpu
-```
+Chương trình xử lý lần lượt mọi file hỗ trợ, sử dụng cùng các detection cho hai
+thuật toán Nearest-Neighbor và Hungarian. Mỗi track có Kalman filter để dự đoán
+vị trí, giữ ID qua các frame và xây dựng quỹ đạo. Viền track và quỹ đạo dày
+1 pixel để dễ quan sát vật thể nhỏ.
 
-Chạy thử nhanh 300 frame:
+Video thông thường dùng MOG2 để tách foreground. TIFF dùng white top-hat để tách
+các đốm sáng nhỏ; FPS được đọc từ metadata ImageJ khi có. Trước phân đoạn,
+chương trình lọc nhiễu nhẹ và giữ biên; sau đó tự điều chỉnh ngưỡng diện tích
+theo các vùng phát hiện trong từng cảnh. Ngưỡng đốm sáng TIFF được điều chỉnh
+theo mức nhiễu nền. Với cảnh có nhiều vùng lớn, chương
+trình nối các mảnh foreground gần nhau và loại bớt vùng nhỏ nằm trong khung
+lớn. Các vật thể thật nằm sát nhau có thể bị gộp; trong cảnh có cả vật thể lớn
+và rất nhỏ, các vật thể nhỏ nhất vẫn có thể bị lọc nhầm.
 
-```powershell
-python main.py dataset\video.mp4 --output python\outputs --algorithm both --device gpu --max-frames 300
-```
+Track được xác nhận sau ba lần phát hiện liên tiếp; trong cảnh có nhiều vật thể
+lớn, các vùng nhỏ cần năm lần để giảm ID nhiễu. Với video thông thường, track cần dịch chuyển
+ít nhất 2 pixel trước khi được hiển thị; track đã di chuyển vẫn được giữ khi
+tạm dừng. Kalman tự tăng độ linh hoạt theo vận tốc để theo kịp vật tăng tốc.
+Video đầu ra chỉ vẽ track đang có detection, rút ngắn đường vẽ và giới hạn
+nhãn ID khi cảnh quá đông;
+điểm dự đoán trong lúc mất detection vẫn có trong CSV/JSON với `matched=false`.
+Số `visible tracks` là số track được xác nhận và đang có detection, không phải
+số vật thể thực tế. Chất lượng giữ ID còn phụ thuộc độ tương phản và che khuất;
+vật thể quá mờ hoặc dịch chuyển dưới ngưỡng có thể chưa được hiển thị.
 
-File `main.py` ở gốc là launcher; toàn bộ phần cài đặt vẫn nằm trong thư mục
-`python`.
+Kết quả nằm trong `python/outputs/<tên-file>/`:
 
-## Cài đặt và chạy trong thư mục `python`
+- `annotated_nearest.mp4` và `annotated_hungarian.mp4`: video có ID và quỹ đạo.
+- `trajectories_nearest.csv`, `trajectories_nearest.json`,
+  `trajectories_hungarian.csv`, `trajectories_hungarian.json`: vị trí, vận tốc
+  và thông tin điểm được đo hoặc dự đoán.
+- `python/outputs/summary.json`: thống kê cho tất cả file đã xử lý.
 
-Từ thư mục `python`:
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-```
-
-## Chạy
-
-Một video:
-
-```powershell
-python main.py ..\dataset\video.mp4 --output outputs --algorithm both
-```
-
-Toàn bộ video trong `dataset`:
-
-```powershell
-python main.py ..\dataset --output outputs --algorithm both
-```
-
-Mặc định `--device auto` dùng OpenCL GPU nếu OpenCV nhận được GPU, nếu không sẽ
-tự dùng CPU. Ép chạy GPU hoặc CPU bằng:
-
-```powershell
-python main.py ..\dataset\video.mp4 --device gpu --algorithm both
-python main.py ..\dataset\video.mp4 --device cpu --algorithm both
-```
-
-GPU tăng tốc MOG2, threshold và morphology. Nearest-Neighbor, Hungarian,
-Kalman và ghi video vẫn chạy trên CPU. Trường `processing_device_name` trong
-`summary.json` cho biết backend thực tế, tránh trường hợp tưởng rằng GPU đã bật.
-
-Chương trình in tiến độ sau mỗi 100 frame. Để chạy thử nhanh 300 frame đầu:
-
-```powershell
-python main.py ..\dataset\video.mp4 --algorithm both --max-frames 300
-```
-
-`--algorithm both` xử lý cùng detection bằng cả hai thuật toán để so sánh công bằng. Có thể chọn riêng `nearest` hoặc `hungarian`.
-
-Các tham số thường cần chỉnh theo video:
-
-```powershell
-python main.py ..\dataset\video.mp4 `
-  --min-area 300 `
-  --max-area 50000 `
-  --max-distance 80 `
-  --iou-weight 0.25 `
-  --area-weight 0.1 `
-  --max-area-ratio 4 `
-  --appearance-weight 0.5 `
-  --max-missed 10 `
-  --warmup-frames 15
-```
-
-- `--min-area`, `--max-area`: lọc nhiễu hoặc blob quá lớn.
-- `--max-distance`: cổng khoảng cách ghép centroid, tính bằng pixel.
-- `--max-missed`: số frame tối đa giữ track khi bị che khuất (mặc định 15).
-- `--iou-weight`: mức ảnh hưởng của độ chồng lấp bounding box khi ghép.
-- `--area-weight`: mức phạt khi diện tích detection thay đổi.
-- `--max-area-ratio`: không ghép hai đối tượng chênh diện tích quá tỉ lệ này.
-- `--appearance-weight`: mức ảnh hưởng của histogram màu khi ghép ID.
-- `--appearance-momentum`: độ ổn định của mẫu màu theo thời gian.
-- `--initial-velocity-variance`: độ bất định vận tốc ban đầu (đơn vị pixel/giây);
-  tăng khi vật thể xuất hiện với vận tốc lớn.
-- `--max-foreground-ratio`: bỏ detection ở frame đổi cảnh/rung quá mạnh.
-- `--warmup-frames`: thời gian để MOG2 học nền trước khi tạo track.
-- `--learning-rate`: tốc độ cập nhật nền (`-1` là tự động, `0` là đóng băng nền).
-- `--display`: xem trực tiếp; nhấn `q` để dừng.
-
-Mỗi video tạo một thư mục gồm:
-
-- `annotated_nearest.mp4`, `annotated_hungarian.mp4`;
-- `foreground_mask.mp4`;
-- `trajectories_<algorithm>.csv` và `.json`;
-- `summary.json` ở thư mục output, có tốc độ xử lý, thời gian ghép cặp,
-  độ dài track và tỉ lệ điểm đo/dự đoán.
-
-Trong CSV/JSON, `matched=false` nghĩa là vị trí ở frame đó do Kalman dự đoán khi detection tạm thời bị mất.
-Các cột `vx`, `vy`, `speed` là vận tốc Kalman theo pixel/giây.
-
-## Kiểm thử
-
-Các test thuật toán không cần video thật:
-
-```powershell
-python -m pytest -q
-```
-
-Để kiểm thử nhiều video, đặt video vào `dataset`, chạy cả hai thuật toán, rồi so sánh `track_count`, `association_seconds` trong `summary.json` và kiểm tra trực quan ID/quỹ đạo ở video đầu ra. Với đánh giá định lượng, có thể đối chiếu CSV quỹ đạo với ground truth bằng IDF1/MOTA trong thư mục `evaluation` của nhóm.
-
-## Gợi ý tối ưu
-
-- Video camera rung: ổn định ảnh trước MOG2 hoặc tăng `variance-threshold`.
-- Nhiều nhiễu nhỏ: tăng `min-area`, `kernel-size` hoặc số lần morphology.
-- Vật di chuyển nhanh: tăng `max-distance` và process variance.
-- Hay đổi ID lúc che khuất: tăng `max-missed`; ưu tiên Hungarian.
-- Nền thay đổi nhanh: tăng learning rate; nền tĩnh thì giảm hoặc đặt `0` sau warm-up.
+Các file cùng tên gốc nhưng khác phần mở rộng được lưu vào thư mục riêng có
+thêm phần mở rộng vào tên. Chương trình hỗ trợ MP4, AVI, MOV, MKV, WebM, WMV,
+MPEG/MPG, FLV, 3GP, TS/MTS/M2TS, VOB, MJPEG và TIFF; khả năng đọc codec phụ
+thuộc bản OpenCV được cài.
