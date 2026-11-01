@@ -244,3 +244,19 @@ def test_area_gate_resists_noise_burst_then_recovers_for_small_scene():
         _, detections = detector.apply(small)
     assert detector._minimum_area == 4
     assert len(detections) == 200
+
+
+def test_merge_nearby_candidates_joins_vertical_fragments():
+    import numpy as np
+    from object_tracking.detection import _merge_nearby_candidates
+
+    def candidate(x, y, w, h):
+        contour = np.array([[[x, y]], [[x + w, y]], [[x + w, y + h]], [[x, y + h]]], dtype=np.int32)
+        return contour, float(w * h), (x, y, w, h)
+
+    head, legs, far = candidate(10, 10, 8, 8), candidate(8, 24, 12, 20), candidate(200, 10, 8, 8)
+    merged = _merge_nearby_candidates([head, legs, far], gap_x=6, gap_y=16)
+    boxes = sorted(item[2] for item in merged)
+    # The merged hull box is inclusive of the last pixel (+1); a lone piece is untouched.
+    assert boxes == [(8, 10, 13, 35), (200, 10, 8, 8)]
+    assert len(_merge_nearby_candidates([head, legs, far], 0, 0)) == 3

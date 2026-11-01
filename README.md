@@ -1,6 +1,6 @@
 # Object Detection and Tracking using Python and Fiji/ImageJ
 
-## 📌 Giới thiệu
+## Giới thiệu
 
 Đây là dự án môn **Xử lý ảnh** với đề tài:
 
@@ -20,7 +20,7 @@ Mục tiêu cuối cùng là đánh giá định lượng hiệu quả của cá
 
 ---
 
-## 🎯 Mục tiêu
+## Mục tiêu
 
 Dự án hướng tới các mục tiêu:
 
@@ -38,7 +38,7 @@ Dự án hướng tới các mục tiêu:
 
 ---
 
-## ⚡ Demo trong một lệnh
+## Demo
 
 1. Cài dependency:
 
@@ -68,7 +68,7 @@ Xem chi tiết kết quả trong [python/README.md](python/README.md).
 
 ---
 
-# 🧠 Tổng quan hệ thống
+# Tổng quan hệ thống
 
 Pipeline chính của dự án:
 
@@ -118,7 +118,7 @@ Pipeline chính của dự án:
 
 ---
 
-# 🔬 Các phương pháp được nghiên cứu
+# Các phương pháp được nghiên cứu
 
 ## 1. Object Detection
 
@@ -251,7 +251,7 @@ Kalman Filter cho phép dự đoán vị trí object khi detection bị mất ho
 
 ---
 
-# 🖥️ Fiji/ImageJ và TrackMate
+# Fiji/ImageJ và TrackMate
 
 **Fiji/ImageJ** được sử dụng làm nền tảng tham chiếu và kiểm chứng.
 
@@ -290,7 +290,7 @@ Ground Truth độc lập được lấy từ annotation đi kèm dataset (ví d
 
 ---
 
-# 📊 Dataset
+# Dataset
 
 Bốn bộ dữ liệu nằm trong `dataset/` và được commit cùng repository:
 
@@ -377,7 +377,7 @@ image-processing-object-tracking/
 │   └── outputs/                 # Kết quả chạy (bị .gitignore)
 │
 ├── fiji/                        # Fiji/ImageJ + TrackMate (chưa có nội dung)
-├── evaluation/                  # Đánh giá định lượng (chưa có nội dung)
+├── evaluation/                  # Đánh giá định lượng Python vs Fiji vs GT (xem evaluation/README.md)
 ├── experiments/                 # Cấu hình / log thí nghiệm (chưa có nội dung)
 └── report/                      # Báo cáo (chưa có nội dung)
 ```
@@ -410,7 +410,7 @@ python --version
 
 ---
 
-# 🚀 Installation
+# Installation
 
 Clone repository:
 
@@ -450,7 +450,7 @@ python -m pip install -r requirements.txt
 
 ---
 
-# ▶️ Running the project
+# Running the project
 
 Mã nguồn nằm trong `python/`; file `main.py` ở thư mục gốc chỉ là launcher gọi `python/main.py`. Chương trình không nhận tham số dòng lệnh: nó tự xử lý toàn bộ media trong `dataset/` và chạy cả hai thuật toán (Nearest Neighbor và Hungarian) trên cùng một kết quả detection.
 
@@ -519,7 +519,7 @@ python -m pytest
 
 ---
 
-# 📐 Ground Truth Processing
+# Ground Truth Processing
 
 Ground Truth hiện có ở hai dạng:
 
@@ -535,7 +535,7 @@ frame,id,xc,yc,w,h
 0,0,145,111,30,79
 ```
 
-> **Trạng thái:** chưa có script chuyển đổi (`parse_xml.py`) và chưa có đoạn mã đánh giá nào trong repository; thư mục `evaluation/` đang trống.
+> **Trạng thái:** `evaluation/evaluate.py` đọc trực tiếp XML CAVIAR, CSV Ground Truth, kết quả Python và Fiji/TrackMate (CSV/XML) nên không cần bước chuyển đổi riêng. Xem [evaluation/README.md](evaluation/README.md).
 
 Kết quả tracking của chương trình (`python/outputs/<tên-file>/trajectories_*.csv`) có các cột:
 
@@ -546,7 +546,7 @@ bbox_x, bbox_y, bbox_width, bbox_height, matched
 
 ---
 
-# 📊 Evaluation
+# Evaluation
 
 Kết quả của các phương pháp sẽ được đánh giá định lượng.
 
@@ -650,7 +650,7 @@ Dùng để so sánh hiệu năng giữa các phương pháp.
 
 ---
 
-# 🧪 Experimental Design
+# Experimental Design
 
 Các thí nghiệm chính:
 
@@ -718,7 +718,7 @@ Ground Truth
 
 ---
 
-# 📈 Expected Results
+# Expected Results
 
 Bảng kết quả dự kiến:
 
@@ -732,7 +732,7 @@ Bảng kết quả dự kiến:
 
 ---
 
-# 📷 Visualization
+# Visualization
 
 Với mỗi file đầu vào, chương trình lưu hai video đã đánh dấu (`annotated_nearest.mp4`, `annotated_hungarian.mp4`) có bounding box, Track ID và quỹ đạo (nét dày 1 pixel để dễ quan sát vật thể nhỏ). Video chỉ vẽ track đang có detection; khi cảnh quá đông, đường vẽ được rút ngắn và nhãn ID bị giới hạn.
 
@@ -740,7 +740,7 @@ Quỹ đạo của từng object cũng được lưu ở `trajectories_*.csv` / 
 
 ---
 
-# 🔬 So sánh Fiji/ImageJ và Python
+# So sánh Fiji/ImageJ và Python
 
 Dự án không chỉ thực hiện tracking bằng Python mà còn sử dụng Fiji/ImageJ để tham chiếu.
 
@@ -760,7 +760,7 @@ Mục tiêu không phải chứng minh Python luôn tốt hơn TrackMate mà là
 
 ---
 
-# 👥 Phân công thành viên
+# Phân công thành viên
 
 | Thành viên                    | Nhiệm vụ                                |
 | ----------------------------- | --------------------------------------- |
@@ -771,7 +771,7 @@ Mục tiêu không phải chứng minh Python luôn tốt hơn TrackMate mà là
 
 ---
 
-# 📝 Report
+# Report
 
 Báo cáo dự kiến gồm:
 
@@ -806,7 +806,7 @@ Nội dung trọng tâm:
 
 ---
 
-# 📚 References
+# References
 
 ### CAVIAR Dataset
 
@@ -832,7 +832,7 @@ https://opencv.org/
 
 ---
 
-# ⚠️ Dataset and GitHub
+#  Dataset and GitHub
 
 Các file trong `dataset/` (tổng cộng khoảng 100 MB, trong đó `video2.mp4` khoảng 27 MB) hiện được commit trực tiếp vào repository. Khi thêm dữ liệu lớn hơn, nên cân nhắc Git LFS hoặc chỉ ghi nguồn tải thay vì commit.
 

@@ -172,3 +172,41 @@ def test_adaptive_process_noise_keeps_accelerating_object_id(association):
         assert len(observed) == 1
         assert observed[0].track_id == 1
 
+
+
+def _walk_with_gap(recover_frames: int):
+    tracker = MultiObjectTracker(
+        association="hungarian",
+        max_distance=20.0,
+        max_missed=2,
+        min_hits=2,
+        recover_frames=recover_frames,
+    )
+    for frame in range(5):  # confirmed track moving right
+        tracker.update([detection(10 + 5 * frame)], frame_index=frame, time_seconds=float(frame))
+    for frame in range(5, 15):  # lost for ten frames, longer than max_missed
+        tracker.update([], frame_index=frame, time_seconds=float(frame))
+    for frame in range(15, 19):  # re-appears near the extrapolated path
+        snaps = tracker.update(
+            [detection(30 + 5 * (frame - 15))], frame_index=frame, time_seconds=float(frame)
+        )
+    return tracker, snaps
+
+
+def test_recovery_gives_lost_track_id_back():
+    tracker, snaps = _walk_with_gap(recover_frames=30)
+    assert [s.track_id for s in snaps] == [1]
+    frames = [p.frame_index for p in tracker.trajectories[1]]
+    assert frames == sorted(set(frames)) and frames[-1] == 18
+    assert len(tracker.trajectories) == 1
+
+
+def test_without_recovery_the_object_gets_a_new_id():
+    tracker, snaps = _walk_with_gap(recover_frames=0)
+    assert snaps[0].track_id != 1
+    assert len(tracker.trajectories) == 2
+
+
+def test_recovery_ignores_tracks_lost_too_long_ago():
+    tracker, snaps = _walk_with_gap(recover_frames=3)
+    assert snaps[0].track_id != 1

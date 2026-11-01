@@ -34,6 +34,7 @@ class _Track:
     missed: int = 0
     history: list[TrajectoryPoint] = field(default_factory=list)
     appearance: np.ndarray | None = None
+    link_checked: bool = False
 
 
 class MultiObjectTracker:
@@ -58,6 +59,10 @@ class MultiObjectTracker:
         adaptive_confirmation: bool = False,
         min_motion_distance: float = 0.0,
         adaptive_process_noise: bool = False,
+        recover_frames: int = 0,
+        recover_distance: float = 40.0,
+        recover_speed: float = 2.0,
+        recover_appearance_max: float = 0.6,
     ) -> None:
         if association not in {"nearest", "hungarian"}:
             raise ValueError("association must be 'nearest' or 'hungarian'")
@@ -74,6 +79,13 @@ class MultiObjectTracker:
             or min_motion_distance < 0
         ):
             raise ValueError("invalid association weights")
+        if (
+            recover_frames < 0
+            or recover_distance <= 0
+            or recover_speed < 0
+            or not 0 < recover_appearance_max <= 1
+        ):
+            raise ValueError("invalid recovery settings")
         self.association = association
         self.max_distance = float(max_distance)
         self.max_missed = int(max_missed)
@@ -91,6 +103,13 @@ class MultiObjectTracker:
         self.adaptive_confirmation = adaptive_confirmation
         self.min_motion_distance = float(min_motion_distance)
         self.adaptive_process_noise = adaptive_process_noise
+        # Re-identification: a newly confirmed track may take over the ID of a
+        # confirmed track that was deleted at most ``recover_frames`` frames
+        # earlier, when it re-appears near the lost track's extrapolated path.
+        self.recover_frames = int(recover_frames)
+        self.recover_distance = float(recover_distance)
+        self.recover_speed = float(recover_speed)
+        self.recover_appearance_max = float(recover_appearance_max)
         self._active: list[_Track] = []
         self._finished: list[_Track] = []
         self._next_id = 1
@@ -232,6 +251,9 @@ class MultiObjectTracker:
                 self._new_track(detection, frame_index, time_seconds, required_hits)
             )
 
+        if self.recover_frames > 0:
+            self._recover_lost_tracks(frame_index)
+
         survivors: list[_Track] = []
         for track in self._active:
             confirmed = track.hits >= track.required_hits
@@ -250,6 +272,84 @@ class MultiObjectTracker:
                 survivors.append(track)
         self._active = survivors
         return self.snapshots()
+
+    def _recover_lost_tracks(self, frame_index: int) -> None:
+        """Give just-confirmed tracks the ID of a recently lost track.
+
+        Cost = distance between the lost track's extrapolated position and the
+        new track's first observation, plus the appearance distance. Pairs must
+        lie inside a radius that grows with the gap, have compatible areas and
+        (when available) similar colour histograms; the Hungarian algorithm
+        then resolves competing pairs.
+        """
+        fresh = [
+            track
+            for track in self._active
+            if track.hits >= track.required_hits and not track.link_checked
+        ]
+        for track in fresh:
+            track.link_checked = True
+        lost = [
+            track
+            for track in self._finished
+            if frame_index - _last_observation(track).frame_index <= self.recover_frames
+        ]
+        if not fresh or not lost:
+            return
+
+        rows, cols = len(lost), len(fresh)
+        distances = np.zeros((rows, cols))
+        gaps = np.zeros((rows, cols))
+        for row, old in enumerate(lost):
+            last = _last_observation(old)
+            for column, track in enumerate(fresh):
+                first = track.history[0]
+                gaps[row, column] = max(0.0, first.frame_index - last.frame_index)
+                seconds = max(0.0, first.time_seconds - last.time_seconds)
+                expected = (
+                    last.centroid[0] + last.velocity[0] * seconds,
+                    last.centroid[1] + last.velocity[1] * seconds,
+                )
+                distances[row, column] = np.hypot(
+                    first.centroid[0] - expected[0], first.centroid[1] - expected[1]
+                )
+        radius = self.recover_distance + self.recover_speed * gaps
+        valid = (distances <= radius) & (gaps <= self.recover_frames)
+        costs = distances.copy()
+        for row, old in enumerate(lost):
+            for column, track in enumerate(fresh):
+                if not valid[row, column]:
+                    continue
+                ratio = max(old.area, track.area) / max(min(old.area, track.area), 1e-9)
+                if ratio > self.max_area_ratio * 2.0:
+                    valid[row, column] = False
+                    continue
+                if old.appearance is not None and track.appearance is not None:
+                    cost = float(
+                        _appearance_cost_matrix([old], [_AppearanceOnly(track.appearance)])[0, 0]
+                    )
+                    if cost > self.recover_appearance_max:
+                        valid[row, column] = False
+                        continue
+                    costs[row, column] += self.appearance_weight * self.max_distance * cost
+        if not valid.any():
+            return
+        # The lost/new "positions" below are placeholders: the real gating is
+        # in ``valid`` and the real cost in ``costs``.
+        placeholder = np.zeros((rows, 2)), np.zeros((cols, 2))
+        matches, _, _ = hungarian_assignment(
+            placeholder[0], placeholder[1], float(costs[valid].max()) + 1.0,
+            pair_costs=costs, valid_mask=valid,
+        )
+        for row, column in matches:
+            old, new = lost[row], fresh[column]
+            first_frame = new.history[0].frame_index
+            new.history = [p for p in old.history if p.frame_index < first_frame] + new.history
+            new.track_id = old.track_id
+            new.hits += old.hits
+            new.age += old.age
+            new.has_moved = new.has_moved or old.has_moved
+            self._finished.remove(old)
 
     def snapshots(self, trail_length: int = 15) -> list[TrackSnapshot]:
         return [
@@ -398,6 +498,19 @@ class MultiObjectTracker:
         total = float(track.appearance.sum())
         if total > 0:
             track.appearance /= total
+
+
+@dataclass(slots=True)
+class _AppearanceOnly:
+    appearance: np.ndarray
+
+
+def _last_observation(track: _Track) -> TrajectoryPoint:
+    """Latest history point that came from a real detection."""
+    for point in reversed(track.history):
+        if point.matched:
+            return point
+    return track.history[-1]
 
 
 def _observed_trail(history: list[TrajectoryPoint], limit: int) -> tuple[tuple[float, float], ...]:

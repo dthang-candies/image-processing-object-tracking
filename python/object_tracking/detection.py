@@ -37,6 +37,10 @@ class DetectorConfig:
     spot_background_size: int = 9
     adaptive_min_area: bool = False
     adaptive_spot_threshold: bool = False
+    # Merge foreground pieces whose boxes are closer than these gaps (pixels)
+    # into one object, e.g. head/torso/legs of one pedestrian. 0 disables.
+    merge_gap_x: int = 0
+    merge_gap_y: int = 0
 
 
 class ForegroundDetector:
@@ -137,6 +141,10 @@ class ForegroundDetector:
             return mask, []
 
         candidates = self._find_candidates(mask, self.config.min_area)
+        if self.config.merge_gap_x > 0 or self.config.merge_gap_y > 0:
+            candidates = _merge_nearby_candidates(
+                candidates, self.config.merge_gap_x, self.config.merge_gap_y
+            )
         median_area = (
             float(np.median([item[1] for item in candidates])) if candidates else 0.0
         )
@@ -284,6 +292,54 @@ class ForegroundDetector:
         if total > 0:
             histogram /= total
         return histogram.astype(np.float32, copy=False)
+
+
+def _merge_nearby_candidates(
+    candidates: list[tuple[np.ndarray, float, tuple[int, int, int, int]]],
+    gap_x: int,
+    gap_y: int,
+) -> list[tuple[np.ndarray, float, tuple[int, int, int, int]]]:
+    """Union candidates whose bounding boxes lie within ``gap_x``/``gap_y``.
+
+    Connected groups (single-linkage) become one candidate whose contour is the
+    convex hull of its pieces, so one person split into head, torso and legs by
+    background subtraction is reported as a single object.
+    """
+    count = len(candidates)
+    if count < 2:
+        return candidates
+    boxes = np.asarray([item[2] for item in candidates], dtype=float)
+    left, top = boxes[:, 0], boxes[:, 1]
+    right, bottom = left + boxes[:, 2], top + boxes[:, 3]
+    gap_between_x = np.maximum(left[:, None] - right[None, :], left[None, :] - right[:, None])
+    gap_between_y = np.maximum(top[:, None] - bottom[None, :], top[None, :] - bottom[:, None])
+    near = (gap_between_x <= gap_x) & (gap_between_y <= gap_y)
+
+    parent = list(range(count))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    for i, j in zip(*np.nonzero(np.triu(near, k=1))):
+        parent[find(int(j))] = find(int(i))
+
+    groups: dict[int, list[int]] = {}
+    for index in range(count):
+        groups.setdefault(find(index), []).append(index)
+
+    merged = []
+    for members in groups.values():
+        if len(members) == 1:
+            merged.append(candidates[members[0]])
+            continue
+        hull = cv2.convexHull(np.vstack([candidates[m][0] for m in members]))
+        merged.append(
+            (hull, float(cv2.contourArea(hull)), tuple(int(v) for v in cv2.boundingRect(hull)))
+        )
+    return merged
 
 
 def _remove_nested_fragments(

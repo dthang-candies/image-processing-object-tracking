@@ -34,6 +34,10 @@ class TrackerConfig:
     adaptive_confirmation: bool = False
     min_motion_distance: float = 0.0
     adaptive_process_noise: bool = False
+    recover_frames: int = 0
+    recover_distance: float = 40.0
+    recover_speed: float = 2.0
+    recover_appearance_max: float = 0.6
 
 
 @dataclass(slots=True)

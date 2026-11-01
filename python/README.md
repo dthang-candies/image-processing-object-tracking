@@ -24,6 +24,14 @@ trình nối các mảnh foreground gần nhau và loại bớt vùng nhỏ nằ
 lớn. Các vật thể thật nằm sát nhau có thể bị gộp; trong cảnh có cả vật thể lớn
 và rất nhỏ, các vật thể nhỏ nhất vẫn có thể bị lọc nhầm.
 
+Với video thông thường, các mảnh foreground có khoảng cách box nhỏ hơn 6 px theo chiều ngang
+và 16 px theo chiều dọc được gộp thành một vật thể (`merge_gap_x/y` trong `DetectorConfig`), để một người
+không bị tách thành đầu, thân và chân. Ảnh TIFF không dùng bước này.
+
+Với video thông thường, track đã xác nhận bị xoá do mất detection vẫn được giữ trong 60 frame.
+Nếu một track mới được xác nhận gần đường đi ngoại suy của nó, có kích thước và màu tương tự, track mới
+nhận lại ID cũ (`recover_*` trong `TrackerConfig`), nhờ đó một người bị che khuất không bị đổi ID.
+
 Track được xác nhận sau ba lần phát hiện liên tiếp; trong cảnh có nhiều vật thể
 lớn, các vùng nhỏ cần năm lần để giảm ID nhiễu. Với video thông thường, track cần dịch chuyển
 ít nhất 2 pixel trước khi được hiển thị; track đã di chuyển vẫn được giữ khi

@@ -149,6 +149,10 @@ def build_config(input_path: Path) -> PipelineConfig:
             max_foreground_ratio=0.90 if microscopy else 0.65,
             adaptive_min_area=True,
             adaptive_spot_threshold=True,
+            # Join head/torso/legs fragments of one moving person; tiny
+            # microscopy spots must stay separate, so it is video-only.
+            merge_gap_x=0 if microscopy else 6,
+            merge_gap_y=0 if microscopy else 16,
         ),
         tracker=TrackerConfig(
             max_distance=15.0 if microscopy else 60.0,
@@ -157,11 +161,13 @@ def build_config(input_path: Path) -> PipelineConfig:
             adaptive_confirmation=True,
             min_motion_distance=0.0 if microscopy else 2.0,
             adaptive_process_noise=True,
-            iou_weight=0.05 if microscopy else 0.25,
+            iou_weight=0.05 if microscopy else 0.6,
             area_weight=0.05 if microscopy else 0.10,
             max_area_ratio=6.0 if microscopy else 4.0,
             appearance_weight=0.0 if microscopy else 0.50,
             mahalanobis_weight=0.75 if microscopy else 0.25,
+            # Re-link a person who re-appears within ~2.4 s to the lost ID.
+            recover_frames=0 if microscopy else 60,
         ),
         save_mask=False,
     )
