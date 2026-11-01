@@ -81,6 +81,17 @@ class TrackSet:
             self.h[keep],
         )
 
+    def restrict_to_frame(self, width: int, height: int) -> "TrackSet":
+        """Keep only points whose centre lies inside a ``width`` x ``height`` image.
+
+        Pixel centres run from 0 to ``width - 1``; the image edge is at -0.5 and
+        ``width - 0.5``. Ground-truth objects outside the field of view cannot be
+        observed by any method and would otherwise count as missed detections.
+        """
+        keep = (self.x >= -0.5) & (self.x <= width - 0.5) & (self.y >= -0.5) & (self.y <= height - 0.5)
+        return TrackSet(self.name, self.frame[keep], self.track_id[keep], self.x[keep],
+                        self.y[keep], self.w[keep], self.h[keep])
+
     def shifted(self, dx: float, dy: float) -> "TrackSet":
         return TrackSet(self.name, self.frame, self.track_id, self.x + dx, self.y + dy, self.w, self.h)
 

@@ -31,7 +31,13 @@ python evaluation/evaluate.py \
 
 Tuỳ chọn chính: `--gate` (px, mặc định 5), `--iou` (mặc định 0.3), `--match auto|distance|iou|inbox`,
 `--pixel-size` (µm/pixel cho CSV của TrackMate, tự đọc từ XML nếu có), `--include-predicted`
-(tính cả điểm Kalman dự đoán `matched=0`), `--keep-untracked`, `--gt-offset DX,DY`, `--no-plots`.
+(tính cả điểm Kalman dự đoán `matched=0`), `--keep-untracked`, `--gt-offset DX,DY`, `--no-plots`,
+`--keep-outside-gt` / `--image-size WxH` (xem dưới).
+
+**GT ngoài khung ảnh.** Với GT dạng điểm (data3, data4), điểm GT nằm ngoài ảnh không phương pháp nào quan sát được, nên
+`--all` tự loại chúng (kích thước ảnh đọc từ file TIFF; ở chế độ đơn lẻ dùng `--image-size 350x350`). Ảnh A có 1023/2000 điểm GT
+ngoài khung (recall thô chỉ 0,47–0,48 cho mọi phương pháp, kể cả TrackMate), ảnh C có 80/2000. Dùng `--keep-outside-gt` để chấm
+trên toàn bộ GT (kết quả mẫu: `evaluation/results_full_gt/`).
 
 Test: `cd evaluation && python -m pytest tests`.
 

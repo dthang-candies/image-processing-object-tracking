@@ -111,6 +111,30 @@ def apply_gt_offset(gt: TrackSet, gt_path: Path, setting: str) -> tuple[TrackSet
     return (gt.shifted(*offset) if any(offset) else gt), offset
 
 
+def media_size(media: Path) -> tuple[int, int] | None:
+    """Image (width, height) of a TIFF/video, or None if unreadable."""
+    try:
+        if media.suffix.lower() in (".tif", ".tiff"):
+            from PIL import Image
+            with Image.open(media) as image:
+                return image.size
+        import cv2
+        capture = cv2.VideoCapture(str(media))
+        size = (int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        capture.release()
+        return size if all(size) else None
+    except Exception:  # noqa: BLE001 - size is optional information
+        return None
+
+
+def crop_point_gt(gt: TrackSet, gt_path: Path, size: tuple[int, int] | None) -> tuple[TrackSet, int]:
+    """Drop point-GT objects outside the image (box GT is left unchanged)."""
+    if size is None or detect_format(gt_path) != "gt-csv":
+        return gt, 0
+    kept = gt.restrict_to_frame(*size)
+    return kept, len(gt) - len(kept)
+
+
 # ------------------------------------------------------------------ one run
 def run_comparison(
     gt: TrackSet,
@@ -121,6 +145,7 @@ def run_comparison(
     plots: bool = True,
     cross_reference: tuple[str, TrackSet] | None = None,
     gt_offset: tuple[float, float] = (0.0, 0.0),
+    excluded_outside: int = 0,
 ) -> dict:
     """Score every prediction against the GT and write JSON/CSV/plots."""
     results: dict[str, Result] = {}
@@ -128,7 +153,8 @@ def run_comparison(
         results[name] = evaluate(gt, tracks, config, name)
     report = {
         "dataset": title,
-        "ground_truth": {"objects": len(gt), "applied_offset_px": list(gt_offset), **track_stats(gt)},
+        "ground_truth": {"objects": len(gt), "applied_offset_px": list(gt_offset),
+                         "excluded_outside_frame": excluded_outside, **track_stats(gt)},
         "methods": {n: {**r.metrics, "stats": track_stats(predictions[n])} for n, r in results.items()},
     }
     if cross_reference:
@@ -273,7 +299,7 @@ def find_fiji(stem: str, media: Path) -> dict[str, Path]:
 
 
 def run_all(config: MatchConfig, out_root: Path, plots: bool, pixel_size: float | None,
-            include_predicted: bool, gt_offset: str = "auto") -> int:
+            include_predicted: bool, gt_offset: str = "auto", keep_outside_gt: bool = False) -> int:
     summary: list[tuple[str, str, dict]] = []
     medias = sorted(p for p in DATASET.rglob("*") if p.suffix.lower() in MEDIA
                     and not any(part.startswith(".") for part in p.relative_to(DATASET).parts))
@@ -305,9 +331,12 @@ def run_all(config: MatchConfig, out_root: Path, plots: bool, pixel_size: float 
                 {n: track_stats(t) for n, t in predictions.items()}, indent=2), encoding="utf-8")
             continue
         gt, offset = apply_gt_offset(load_tracks(gt_path), gt_path, gt_offset)
+        excluded = 0
+        if not keep_outside_gt:
+            gt, excluded = crop_point_gt(gt, gt_path, media_size(media))
         fiji_ref = next(((n, t) for n, t in predictions.items() if n.startswith("Fiji")), None)
         report = run_comparison(gt, predictions, config, out_root / stem, stem, plots,
-                                fiji_ref, offset)
+                                fiji_ref, offset, excluded)
         for name, metrics in report["methods"].items():
             summary.append((stem, name, metrics))
     if summary:
@@ -353,6 +382,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--iou", type=float, default=0.3, help="min IoU for box GT")
     p.add_argument("--gt-offset", default="auto", metavar="DX,DY",
                    help="shift the GT in px; 'auto' = -1,-1 for 1-based GT CSV (see README)")
+    p.add_argument("--keep-outside-gt", action="store_true",
+                   help="keep point-GT objects that lie outside the image (they count as missed)")
+    p.add_argument("--image-size", metavar="WxH",
+                   help="single mode: drop point-GT outside a WxH image (--all reads it from the media)")
     p.add_argument("--pixel-size", type=float, help="um per pixel for TrackMate CSV (auto from XML)")
     p.add_argument("--include-predicted", action="store_true",
                    help="also score Kalman-predicted (matched=0) Python points")
@@ -369,10 +402,14 @@ def main(argv: list[str] | None = None) -> int:
     config = MatchConfig(args.match, args.gate, args.iou)
     if args.all:
         return run_all(config, args.out_root, not args.no_plots, args.pixel_size,
-                       args.include_predicted, args.gt_offset)
+                       args.include_predicted, args.gt_offset, args.keep_outside_gt)
     if not args.gt or not args.pred:
         build_parser().error("give --all, or --gt together with at least one --pred")
     gt, offset = apply_gt_offset(load_tracks(args.gt, args.gt_format), args.gt, args.gt_offset)
+    excluded = 0
+    if args.image_size:
+        width, height = (int(v) for v in args.image_size.lower().split("x"))
+        gt, excluded = crop_point_gt(gt, args.gt, (width, height))
     predictions = {}
     for item in args.pred:
         name, path = parse_pred(item)
@@ -380,7 +417,7 @@ def main(argv: list[str] | None = None) -> int:
             path, args.pred_format, pixel_size=args.pixel_size,
             include_predicted=args.include_predicted, keep_untracked=args.keep_untracked)
     run_comparison(gt, predictions, config, args.out, args.gt.stem, not args.no_plots,
-                   gt_offset=offset)
+                   gt_offset=offset, excluded_outside=excluded)
     return 0
 
 

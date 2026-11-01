@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from loaders import detect_format, load_tracks
+from loaders import TrackSet, detect_format, load_tracks
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -25,3 +25,9 @@ def test_trackmate_csv_scales_um_to_pixels():
         pytest.skip("Fiji export not present")
     tracks = load_tracks(path)
     assert detect_format(path) == "trackmate-csv" and 0 <= tracks.x.max() <= 350
+
+
+def test_restrict_to_frame_drops_points_outside_the_image():
+    ts = TrackSet.from_rows("gt", [(0, 1, 10.0, 10.0), (0, 2, -3.0, 5.0), (1, 2, 350.0, 5.0), (1, 3, 349.4, 0.0)])
+    inside = ts.restrict_to_frame(350, 350)
+    assert sorted(zip(inside.track_id.tolist(), inside.x.tolist())) == [(1, 10.0), (3, 349.4)]
