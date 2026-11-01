@@ -5,3 +5,8 @@ __pycache__/
 outputs/
 .verification_*/
 .DS_Store
+
+# Not shared on GitHub
+dataset/data2/
+Báo cáo XLA/
+Báo cáo XLA.zip
