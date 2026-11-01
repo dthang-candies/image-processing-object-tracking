@@ -2,8 +2,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
-# python/outputs is tracked, except videos above GitHub's 100 MB limit
-python/outputs/video2/annotated_*.mp4
+# python/outputs is tracked, except video2 (derived from the excluded data2)
+python/outputs/video2/
 .verification_*/
 .DS_Store
 
