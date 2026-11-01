@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def discover_videos(path: Path) -> list[Path]:
-    """Return supported media files directly inside a file or directory."""
+    """Return supported media files inside a file or directory, searching subfolders."""
     if path.is_file():
         if path.suffix.lower() in INPUT_EXTENSIONS:
             return [path]
@@ -52,8 +52,10 @@ def discover_videos(path: Path) -> list[Path]:
     if path.is_dir():
         return sorted(
             item
-            for item in path.iterdir()
-            if item.is_file() and item.suffix.lower() in INPUT_EXTENSIONS
+            for item in path.rglob("*")
+            if item.is_file()
+            and item.suffix.lower() in INPUT_EXTENSIONS
+            and not any(part.startswith(".") for part in item.relative_to(path).parts)
         )
     return []
 

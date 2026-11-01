@@ -1,6 +1,6 @@
 # Xử lý video và theo dõi đa đối tượng
 
-Đặt các file video hoặc TIFF trực tiếp vào thư mục `dataset`. Từ thư mục gốc,
+Đặt các file video hoặc TIFF vào thư mục `dataset` (có thể nằm trong thư mục con). Từ thư mục gốc,
 chạy:
 
 ```powershell
