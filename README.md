@@ -831,7 +831,7 @@ https://opencv.org/
 
 #  Dataset and GitHub
 
-Các file trong `dataset/` (tổng cộng khoảng 70 MB) hiện được commit trực tiếp vào repository. Khi thêm dữ liệu lớn hơn, nên cân nhắc Git LFS hoặc chỉ ghi nguồn tải thay vì commit.
+Các file trong `dataset/` (tổng cộng khoảng 29 MB) hiện được commit trực tiếp vào repository. Khi thêm dữ liệu lớn hơn, nên cân nhắc Git LFS hoặc chỉ ghi nguồn tải thay vì commit.
 
 Kết quả chạy trong `python/outputs/` không được commit (đã có trong `.gitignore`).
 
