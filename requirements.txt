@@ -1,2 +1,4 @@
 -r python/requirements.txt
 
+scipy>=1.10
+matplotlib>=3.7
