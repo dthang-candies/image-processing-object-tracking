@@ -297,7 +297,6 @@ Bốn bộ dữ liệu nằm trong `dataset/` và được commit cùng reposito
 | Thư mục | File | Nội dung | Ground Truth |
 | ------- | ---- | -------- | ------------ |
 | `data1/` | `video1.mpg` | Video CAVIAR `EnterExitCrossingPaths1cor`, 384 × 288, 383 frame có annotation | `ground_truth_video1.xml` (định dạng CAVIAR) |
-| `data2/` | `video2.mp4` | Video 1280 × 720, dài khoảng 199 giây | Chưa có |
 | `data3/` | `track_2D_A_0000.tif` | Chuỗi ảnh TIFF nhiều frame (đốm sáng nhỏ) | `track_2D_A_0000.csv`, `track_2D_A_0000.tif.xml` (TrackMate) |
 | `data4/` | `track_2D_C_0002.tif` | Chuỗi ảnh TIFF nhiều frame (đốm sáng nhỏ) | `track_2D_C_0002.csv`, `track_2D_C_0002.tif.xml` (TrackMate) |
 
@@ -339,7 +338,7 @@ TrackID,x,y,frame
 0,79.157736602,116.959968111,1
 ```
 
-> **Lưu ý:** `python main.py` quét toàn bộ `dataset/` kể cả thư mục con (bỏ qua file/thư mục bắt đầu bằng dấu `.`), nên chạy một lần sẽ xử lý cả bốn bộ dữ liệu trên. Các file `.csv` và `.xml` đi kèm không phải media nên bị bỏ qua.
+> **Lưu ý:** `python main.py` quét toàn bộ `dataset/` kể cả thư mục con (bỏ qua file/thư mục bắt đầu bằng dấu `.`), nên chạy một lần sẽ xử lý cả ba bộ dữ liệu trên (`data1`, `data3`, `data4`; `data2` đã bị loại khỏi dự án). Các file `.csv` và `.xml` đi kèm không phải media nên bị bỏ qua.
 
 ---
 
@@ -354,7 +353,6 @@ image-processing-object-tracking/
 │
 ├── dataset/
 │   ├── data1/                   # CAVIAR: video1.mpg + ground_truth_video1.xml
-│   ├── data2/                   # video2.mp4
 │   ├── data3/                   # track_2D_A_0000.tif + .csv + .tif.xml
 │   └── data4/                   # track_2D_C_0002.tif + .csv + .tif.xml
 │
@@ -461,7 +459,6 @@ Mã nguồn nằm trong `python/`; file `main.py` ở thư mục gốc chỉ là
 ```text
 dataset/
 ├── data1/video1.mpg
-├── data2/video2.mp4
 └── data3/track_2D_A_0000.tif
 ```
 
@@ -834,7 +831,7 @@ https://opencv.org/
 
 #  Dataset and GitHub
 
-Các file trong `dataset/` (tổng cộng khoảng 100 MB, trong đó `video2.mp4` khoảng 27 MB) hiện được commit trực tiếp vào repository. Khi thêm dữ liệu lớn hơn, nên cân nhắc Git LFS hoặc chỉ ghi nguồn tải thay vì commit.
+Các file trong `dataset/` (tổng cộng khoảng 70 MB) hiện được commit trực tiếp vào repository. Khi thêm dữ liệu lớn hơn, nên cân nhắc Git LFS hoặc chỉ ghi nguồn tải thay vì commit.
 
 Kết quả chạy trong `python/outputs/` không được commit (đã có trong `.gitignore`).
 

@@ -2,12 +2,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
-# python/outputs is tracked, except video2 (derived from the excluded data2)
-python/outputs/video2/
 .verification_*/
 .DS_Store
 
 # Not shared on GitHub
-dataset/data2/
 Báo cáo XLA/
 Báo cáo XLA.zip

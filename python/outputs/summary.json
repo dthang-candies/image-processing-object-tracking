@@ -7,8 +7,8 @@
     "frames": 383,
     "source_fps": 25.0,
     "source_frame_count": 4,
-    "processing_seconds": 2.090577625000151,
-    "processing_fps": 183.20295569028315,
+    "processing_seconds": 2.0210723339987453,
+    "processing_fps": 189.5033609421709,
     "algorithms": {
       "nearest": {
         "track_count": 38,
@@ -18,7 +18,7 @@
         "matched_fraction": 0.5172829581993569,
         "mean_track_length": 65.47368421052632,
         "mean_speed_pixels_per_second": 25.00301891162419,
-        "association_seconds": 0.13870983813831117,
+        "association_seconds": 0.1320274710888043,
         "trajectory_csv": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video1/trajectories_nearest.csv",
         "trajectory_json": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video1/trajectories_nearest.json",
         "annotated_video": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video1/annotated_nearest.mp4"
@@ -31,49 +31,10 @@
         "matched_fraction": 0.5206310679611651,
         "mean_track_length": 65.05263157894737,
         "mean_speed_pixels_per_second": 25.151185144630865,
-        "association_seconds": 0.16208887597895227,
+        "association_seconds": 0.15333999381982721,
         "trajectory_csv": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video1/trajectories_hungarian.csv",
         "trajectory_json": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video1/trajectories_hungarian.json",
         "annotated_video": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video1/annotated_hungarian.mp4"
-      }
-    }
-  },
-  {
-    "input": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/dataset/data2/video2.mp4",
-    "source_type": "video",
-    "processing_device": "gpu",
-    "processing_device_name": "OpenCL: Apple M2",
-    "frames": 4983,
-    "source_fps": 24.99612022140603,
-    "source_frame_count": 4983,
-    "processing_seconds": 103.07872045898694,
-    "processing_fps": 48.34169436535294,
-    "algorithms": {
-      "nearest": {
-        "track_count": 1096,
-        "trajectory_points": 128511,
-        "matched_points": 99541,
-        "predicted_points": 28970,
-        "matched_fraction": 0.7745718265362498,
-        "mean_track_length": 117.25456204379562,
-        "mean_speed_pixels_per_second": 65.6578752460854,
-        "association_seconds": 9.014126546506304,
-        "trajectory_csv": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video2/trajectories_nearest.csv",
-        "trajectory_json": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video2/trajectories_nearest.json",
-        "annotated_video": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video2/annotated_nearest.mp4"
-      },
-      "hungarian": {
-        "track_count": 1092,
-        "trajectory_points": 128508,
-        "matched_points": 99569,
-        "predicted_points": 28939,
-        "matched_fraction": 0.7748077940672954,
-        "mean_track_length": 117.68131868131869,
-        "mean_speed_pixels_per_second": 65.6613079337308,
-        "association_seconds": 10.283148855058243,
-        "trajectory_csv": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video2/trajectories_hungarian.csv",
-        "trajectory_json": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video2/trajectories_hungarian.json",
-        "annotated_video": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/video2/annotated_hungarian.mp4"
       }
     }
   },
@@ -85,8 +46,8 @@
     "frames": 100,
     "source_fps": 100.0,
     "source_frame_count": 100,
-    "processing_seconds": 1.4334940419939812,
-    "processing_fps": 69.75962024990395,
+    "processing_seconds": 1.1624967079987982,
+    "processing_fps": 86.02174897522667,
     "algorithms": {
       "nearest": {
         "track_count": 20,
@@ -96,7 +57,7 @@
         "matched_fraction": 0.8365724381625441,
         "mean_track_length": 56.6,
         "mean_speed_pixels_per_second": 254.83840962897546,
-        "association_seconds": 0.05503170493466314,
+        "association_seconds": 0.04572291890508495,
         "trajectory_csv": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_A_0000/trajectories_nearest.csv",
         "trajectory_json": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_A_0000/trajectories_nearest.json",
         "annotated_video": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_A_0000/annotated_nearest.mp4"
@@ -109,7 +70,7 @@
         "matched_fraction": 0.8365724381625441,
         "mean_track_length": 56.6,
         "mean_speed_pixels_per_second": 254.83840962897546,
-        "association_seconds": 0.07882742297078948,
+        "association_seconds": 0.06061546099954285,
         "trajectory_csv": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_A_0000/trajectories_hungarian.csv",
         "trajectory_json": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_A_0000/trajectories_hungarian.json",
         "annotated_video": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_A_0000/annotated_hungarian.mp4"
@@ -124,8 +85,8 @@
     "frames": 100,
     "source_fps": 100.0,
     "source_frame_count": 100,
-    "processing_seconds": 1.4502154999936465,
-    "processing_fps": 68.9552690620381,
+    "processing_seconds": 1.2424141249939566,
+    "processing_fps": 80.48846031953028,
     "algorithms": {
       "nearest": {
         "track_count": 21,
@@ -135,7 +96,7 @@
         "matched_fraction": 0.9843158464034614,
         "mean_track_length": 88.04761904761905,
         "mean_speed_pixels_per_second": 25.058452211430208,
-        "association_seconds": 0.08266550001280848,
+        "association_seconds": 0.07551062607672065,
         "trajectory_csv": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_C_0002/trajectories_nearest.csv",
         "trajectory_json": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_C_0002/trajectories_nearest.json",
         "annotated_video": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_C_0002/annotated_nearest.mp4"
@@ -148,7 +109,7 @@
         "matched_fraction": 0.9843158464034614,
         "mean_track_length": 88.04761904761905,
         "mean_speed_pixels_per_second": 25.058452211430208,
-        "association_seconds": 0.1105617569264723,
+        "association_seconds": 0.10116842095158063,
         "trajectory_csv": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_C_0002/trajectories_hungarian.csv",
         "trajectory_json": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_C_0002/trajectories_hungarian.json",
         "annotated_video": "/Users/dthazg/Documents/DIP/image-processing-object-tracking/python/outputs/track_2D_C_0002/annotated_hungarian.mp4"

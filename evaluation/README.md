@@ -64,7 +64,7 @@ Ghép bằng Hungarian (`scipy.optimize.linear_sum_assignment`) trên ma trận 
 | CLEAR-MOT | MOTA = 1 − (FN+FP+IDSW)/#GT, MOTP, IDSW | Giữ cặp GT↔ID khi còn hợp lệ nên IDSW chỉ đếm lần đổi ID thật |
 | Định danh | IDTP, IDP, IDR, **IDF1** | Một phép gán toàn cục GT-track ↔ pred-track |
 | Mức track | MT (≥80%), PT, ML (≤20%), FM | FM = số lần track GT bị đứt rồi nối lại |
-| Mô tả | số track, độ dài trung bình, tốc độ | Dùng cho video không có GT (`data2`) |
+| Mô tả | số track, độ dài trung bình, tốc độ | Dùng cho dữ liệu không có GT |
 
 MOTA có thể âm khi FP rất nhiều (như `video1`). MOTP là IoU trung bình (càng cao càng tốt) với box
 và là px (càng thấp càng tốt) với điểm.
