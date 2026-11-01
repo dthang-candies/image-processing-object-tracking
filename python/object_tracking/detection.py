@@ -37,6 +37,8 @@ class DetectorConfig:
     spot_background_size: int = 9
     adaptive_min_area: bool = False
     adaptive_spot_threshold: bool = False
+    # Adaptive threshold = max(spot_threshold, sigma * robust noise estimate).
+    adaptive_threshold_sigma: float = 4.5
     # Merge foreground pieces whose boxes are closer than these gaps (pixels)
     # into one object, e.g. head/torso/legs of one pedestrian. 0 disables.
     merge_gap_x: int = 0
@@ -104,7 +106,10 @@ class ForegroundDetector:
                 mad = float(np.median(np.abs(residual - median)))
                 noise_sigma = mad / 0.6745
                 self._spot_threshold = min(
-                    255.0, max(self._spot_threshold, 4.5 * noise_sigma)
+                    255.0, max(
+                        self._spot_threshold,
+                        self.config.adaptive_threshold_sigma * noise_sigma,
+                    )
                 )
             _, mask = cv2.threshold(
                 response,

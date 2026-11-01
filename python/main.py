@@ -158,6 +158,13 @@ def build_config(input_path: Path) -> PipelineConfig:
             max_distance=15.0 if microscopy else 60.0,
             max_missed=10 if microscopy else 15,
             min_hits=3,
+            # Microscopy spots are localised to ~1 px, so trust the measurement:
+            # with the video defaults (variance 25) the filtered position lags
+            # behind the particle and the error grows over time
+            # (experiments/README.md, hypothesis H5).
+            measurement_variance=1.0 if microscopy else 25.0,
+            process_variance=1000.0 if microscopy else 5.0,
+            mahalanobis_gate=100.0 if microscopy else 25.0,
             adaptive_confirmation=True,
             min_motion_distance=0.0 if microscopy else 2.0,
             adaptive_process_noise=True,
